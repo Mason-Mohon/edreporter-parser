@@ -33,8 +33,11 @@ def drawable_canvas(
     canvas_width: int = 1000,
     canvas_height: Optional[int] = None,
     key: str = "canvas"
-) -> Optional[dict]:
+) -> tuple[Image.Image, float, float]:
     """Render an interactive canvas for drawing bounding boxes.
+    
+    Note: This is a display-only component. Drawing is handled via
+    streamlit-drawable-canvas or direct Streamlit interactions.
     
     Args:
         page_image: PIL Image of the PDF page
@@ -45,8 +48,7 @@ def drawable_canvas(
         key: Unique key for the component
         
     Returns:
-        Dictionary with drawn bbox if a new region was drawn, None otherwise
-        Format: {"x": float, "y": float, "w": float, "h": float}
+        Tuple of (resized_image, scale_x, scale_y) for coordinate conversion
     """
     # Calculate canvas height to maintain aspect ratio
     if canvas_height is None:
@@ -74,7 +76,7 @@ def drawable_canvas(
             "label": region.get("label", ""),
         })
     
-    # HTML/JS component
+    # HTML/JS component (display only)
     component_html = f"""
     <!DOCTYPE html>
     <html>
@@ -87,22 +89,11 @@ def drawable_canvas(
             }}
             #canvas {{
                 border: 2px solid #ccc;
-                cursor: crosshair;
                 display: block;
-            }}
-            .instructions {{
-                font-family: Arial, sans-serif;
-                font-size: 12px;
-                padding: 5px;
-                background: #f0f0f0;
-                margin-bottom: 5px;
             }}
         </style>
     </head>
     <body>
-        <div class="instructions">
-            Click and drag to draw a region. Right-click on a region to delete it.
-        </div>
         <canvas id="canvas" width="{canvas_width}" height="{canvas_height}"></canvas>
         
         <script>
@@ -116,16 +107,7 @@ def drawable_canvas(
             // Existing regions
             const existingRegions = {display_regions};
             
-            // Drawing state
-            let isDrawing = false;
-            let startX, startY;
-            let currentRect = null;
-            
             bgImage.onload = function() {{
-                redraw();
-            }};
-            
-            function redraw() {{
                 // Clear canvas
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
                 
@@ -134,108 +116,32 @@ def drawable_canvas(
                 
                 // Draw existing regions
                 existingRegions.forEach(region => {{
-                    drawRect(region.x, region.y, region.w, region.h, region.color, region.label);
-                }});
-                
-                // Draw current rectangle being drawn
-                if (currentRect) {{
-                    drawRect(currentRect.x, currentRect.y, currentRect.w, currentRect.h, '#ff0000', '', true);
-                }}
-            }}
-            
-            function drawRect(x, y, w, h, color, label, dashed = false) {{
-                ctx.strokeStyle = color;
-                ctx.lineWidth = 2;
-                
-                if (dashed) {{
-                    ctx.setLineDash([5, 5]);
-                }} else {{
+                    ctx.strokeStyle = region.color;
+                    ctx.lineWidth = 2;
                     ctx.setLineDash([]);
-                }}
-                
-                ctx.strokeRect(x, y, w, h);
-                
-                // Draw semi-transparent fill
-                ctx.fillStyle = color + '20';  // Add alpha
-                ctx.fillRect(x, y, w, h);
-                
-                // Draw label
-                if (label) {{
-                    ctx.fillStyle = color;
-                    ctx.font = 'bold 14px Arial';
-                    ctx.fillText(label, x + 5, y + 20);
-                }}
-            }}
-            
-            canvas.addEventListener('mousedown', (e) => {{
-                const rect = canvas.getBoundingClientRect();
-                startX = e.clientX - rect.left;
-                startY = e.clientY - rect.top;
-                isDrawing = true;
-            }});
-            
-            canvas.addEventListener('mousemove', (e) => {{
-                if (!isDrawing) return;
-                
-                const rect = canvas.getBoundingClientRect();
-                const currentX = e.clientX - rect.left;
-                const currentY = e.clientY - rect.top;
-                
-                const x = Math.min(startX, currentX);
-                const y = Math.min(startY, currentY);
-                const w = Math.abs(currentX - startX);
-                const h = Math.abs(currentY - startY);
-                
-                currentRect = {{ x, y, w, h }};
-                redraw();
-            }});
-            
-            canvas.addEventListener('mouseup', (e) => {{
-                if (!isDrawing) return;
-                isDrawing = false;
-                
-                if (currentRect && currentRect.w > 5 && currentRect.h > 5) {{
-                    // Convert back to original image coordinates
-                    const scaledRect = {{
-                        x: currentRect.x * {scale_x},
-                        y: currentRect.y * {scale_y},
-                        w: currentRect.w * {scale_x},
-                        h: currentRect.h * {scale_y}
-                    }};
+                    ctx.strokeRect(region.x, region.y, region.w, region.h);
                     
-                    // Send to Streamlit
-                    window.parent.postMessage({{
-                        type: 'streamlit:setComponentValue',
-                        key: '{key}',
-                        value: scaledRect
-                    }}, '*');
-                }}
-                
-                currentRect = null;
-                redraw();
-            }});
-            
-            canvas.addEventListener('mouseleave', () => {{
-                if (isDrawing) {{
-                    isDrawing = false;
-                    currentRect = null;
-                    redraw();
-                }}
-            }});
-            
-            // Prevent context menu on right-click
-            canvas.addEventListener('contextmenu', (e) => {{
-                e.preventDefault();
-            }});
+                    // Draw semi-transparent fill
+                    ctx.fillStyle = region.color + '20';
+                    ctx.fillRect(region.x, region.y, region.w, region.h);
+                    
+                    // Draw label
+                    if (region.label) {{
+                        ctx.fillStyle = region.color;
+                        ctx.font = 'bold 14px Arial';
+                        ctx.fillText(region.label, region.x + 5, region.y + 20);
+                    }}
+                }});
+            }};
         </script>
     </body>
     </html>
     """
     
     # Render component
-    result = components.html(component_html, height=canvas_height + 40, scrolling=False)
+    components.html(component_html, height=canvas_height + 10, scrolling=False)
     
-    return result
+    return display_image, scale_x, scale_y
 
 
 def display_page_with_regions(

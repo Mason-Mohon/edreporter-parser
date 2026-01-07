@@ -242,19 +242,36 @@ def render_canvas_with_regions(
                 "label": label,
             })
     
-    # Render canvas
-    st.markdown("**Draw a rectangle to create a new region:**")
-    
-    result = drawable_canvas(
+    # Display canvas with existing regions
+    st.markdown("**Page Preview:**")
+    display_image, scale_x, scale_y = drawable_canvas(
         page_image=page_image,
         existing_regions=existing_regions,
         canvas_width=900,
         key=f"canvas_page_{current_page}"
     )
     
-    # Handle new region
-    if result:
-        handle_new_region(annotation_doc, current_page, result)
+    # Manual region input form
+    st.markdown("**Add New Region:**")
+    
+    with st.form(key=f"region_form_{current_page}"):
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            x = st.number_input("X", min_value=0, max_value=int(page_image.width), value=100, step=10, key=f"x_{current_page}")
+        with col2:
+            y = st.number_input("Y", min_value=0, max_value=int(page_image.height), value=100, step=10, key=f"y_{current_page}")
+        with col3:
+            w = st.number_input("Width", min_value=10, max_value=int(page_image.width), value=300, step=10, key=f"w_{current_page}")
+        with col4:
+            h = st.number_input("Height", min_value=10, max_value=int(page_image.height), value=400, step=10, key=f"h_{current_page}")
+        
+        submitted = st.form_submit_button("➕ Add Region")
+        
+        if submitted:
+            bbox_dict = {"x": x, "y": y, "w": w, "h": h}
+            handle_new_region(annotation_doc, current_page, bbox_dict)
+            st.rerun()
 
 
 def handle_new_region(annotation_doc: AnnotationDoc, page_index: int, bbox_dict: dict) -> None:
