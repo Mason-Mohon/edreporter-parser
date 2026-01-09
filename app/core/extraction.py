@@ -71,35 +71,48 @@ def extract_region_text(
     Returns:
         Tuple of (extracted_text, metadata)
     """
+    from webapp.logger import logger
+    
     text = ""
     method: Literal["pdf_text", "ocr"] = "pdf_text"
     ocr_confidence = 0.0
+    
+    logger.info(f"Extracting text from region {region.region_id[:8]} on page {page_index}")
+    logger.debug(f"  Region bbox: {region.bbox.to_dict()}, DPI: {dpi}")
     
     # Try PDF text layer first if preferred
     if prefer_pdf_text:
         try:
             text = extract_text_in_bbox(pdf_path, page_index, region.bbox, dpi)
             
+            logger.debug(f"  PDF text extracted: {len(text)} chars")
+            
             # Check quality
             if should_fallback_to_ocr(text):
+                logger.info(f"  PDF text quality poor, falling back to OCR")
                 # PDF text is poor quality, try OCR
                 method = "ocr"
                 text = _ocr_region(pdf_path, page_index, region, dpi, ocr_lang, tesseract_psm)
                 ocr_confidence = 85.0  # Placeholder, could get real confidence
+                logger.debug(f"  OCR text: {len(text)} chars")
             else:
                 method = "pdf_text"
+                logger.debug(f"  Using PDF text (quality OK)")
         except Exception as e:
-            print(f"PDF text extraction failed for region {region.region_id}: {e}")
+            logger.error(f"  PDF text extraction failed: {e}")
             # Fall back to OCR
             method = "ocr"
             text = _ocr_region(pdf_path, page_index, region, dpi, ocr_lang, tesseract_psm)
     else:
         # OCR directly
+        logger.info(f"  Using OCR directly (prefer_pdf_text=False)")
         method = "ocr"
         text = _ocr_region(pdf_path, page_index, region, dpi, ocr_lang, tesseract_psm)
     
     # Calculate quality score
     quality_score = calculate_quality_score(text)
+    
+    logger.info(f"  Extraction complete: method={method}, quality={quality_score:.2f}, length={len(text)}")
     
     # Create metadata
     metadata = RegionExtraction(
@@ -165,6 +178,8 @@ def build_article_text(
     Returns:
         Dictionary mapping article_id to ExtractedText
     """
+    from webapp.logger import logger
+    
     results: dict[str, ExtractedText] = {}
     
     # Get settings
@@ -174,12 +189,19 @@ def build_article_text(
     ocr_lang = settings.ocr_lang
     tesseract_psm = 6  # Default PSM mode
     
+    logger.info(f"Building article text for {len(annotation_doc.articles)} articles")
+    logger.info(f"Settings: DPI={dpi}, prefer_pdf_text={prefer_pdf_text}, ocr_lang={ocr_lang}")
+    
     # Process each article
     for article_id in annotation_doc.articles.keys():
+        article = annotation_doc.articles[article_id]
+        logger.info(f"Processing article {article_id}: {article.title or '(no title)'}")
+        
         # Get regions for this article, sorted by order
         regions = annotation_doc.get_regions_for_article(article_id)
         
         if not regions:
+            logger.warning(f"  No regions found for article {article_id}")
             # No regions for this article
             results[article_id] = ExtractedText(
                 article_id=article_id,
@@ -187,6 +209,8 @@ def build_article_text(
                 regions_metadata=[]
             )
             continue
+        
+        logger.info(f"  Processing {len(regions)} regions")
         
         # Extract text from each region
         article_text_parts = []
@@ -211,7 +235,10 @@ def build_article_text(
         
         # Apply cleanup if requested
         if apply_cleanup:
+            logger.debug(f"  Applying text cleanup")
             full_text = cleanup_text(full_text)
+        
+        logger.info(f"  Article {article_id} complete: {len(full_text)} characters total")
         
         # Store result
         results[article_id] = ExtractedText(
@@ -219,6 +246,8 @@ def build_article_text(
             text=full_text,
             regions_metadata=regions_metadata
         )
+    
+    logger.info(f"Text extraction complete for all {len(results)} articles")
     
     return results
 

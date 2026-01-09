@@ -27,17 +27,18 @@ def should_fallback_to_ocr(text: str) -> bool:
     if len(text) < 40:
         return True
     
-    # Count alphanumeric vs total characters
-    alphanum_count = sum(c.isalnum() for c in text)
+    # Count alphanumeric vs total characters (including spaces)
+    alphanum_space_count = sum(c.isalnum() or c.isspace() for c in text)
     total_count = len(text)
     
     if total_count == 0:
         return True
     
-    alphanum_ratio = alphanum_count / total_count
+    alphanum_space_ratio = alphanum_space_count / total_count
     
-    # If less than 65% alphanumeric, likely garbled
-    if alphanum_ratio < 0.65:
+    # If less than 70% alphanumeric+space, likely garbled
+    # (Lowered from 65% to 70% since we include spaces now)
+    if alphanum_space_ratio < 0.70:
         return True
     
     # Count isolated single letters (potential column ordering issue)
@@ -45,7 +46,8 @@ def should_fallback_to_ocr(text: str) -> bool:
     isolated_letters = len(re.findall(r'\b[a-zA-Z]\b', text))
     words = len(text.split())
     
-    if words > 0 and isolated_letters / words > 0.3:
+    # More lenient threshold (30% -> 40%) since some legitimate text has single letters (A, I, etc.)
+    if words > 0 and isolated_letters / words > 0.4:
         return True
     
     return False

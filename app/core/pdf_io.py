@@ -144,6 +144,8 @@ def extract_text_in_bbox(
 ) -> str:
     """Extract text from PDF text layer within a bounding box.
     
+    Uses block-based extraction with proper sorting for multi-column layouts.
+    
     Args:
         pdf_path: Path to PDF file
         page_index: 0-based page index
@@ -153,6 +155,8 @@ def extract_text_in_bbox(
     Returns:
         Extracted text (may be empty or garbled if no text layer)
     """
+    from webapp.logger import logger
+    
     doc = fitz.open(pdf_path)
     page = doc[page_index]
     
@@ -163,12 +167,38 @@ def extract_text_in_bbox(
     # Convert pixel bbox to PDF rect
     pdf_rect = bbox_pixels_to_pdf(bbox_pixels, page_width, page_height, dpi)
     
-    # Extract text within the rectangle
-    # Use "blocks" mode for better layout preservation
-    text = page.get_text("text", clip=pdf_rect)
+    logger.debug(f"Extracting text from bbox: pixels={bbox_pixels.to_dict()}, pdf_rect={pdf_rect}, dpi={dpi}")
+    
+    # Extract text blocks for better ordering
+    blocks = page.get_text("blocks", clip=pdf_rect)
+    
+    if not blocks:
+        logger.warning(f"No text blocks found in region on page {page_index}")
+        doc.close()
+        return ""
+    
+    # Format and sort blocks by position (top-to-bottom, left-to-right)
+    text_blocks = []
+    for block in blocks:
+        if len(block) >= 5 and block[6] == 0:  # Text block (not image)
+            x0, y0, x1, y1, text, block_no, block_type = block[:7]
+            text_blocks.append({
+                "text": text.strip(),
+                "y": y0,  # Top position
+                "x": x0,  # Left position
+            })
+    
+    # Sort by Y position first (top to bottom), then X position (left to right)
+    # Use tolerance for Y to handle same-line text
+    text_blocks.sort(key=lambda b: (round(b["y"] / 5) * 5, b["x"]))
+    
+    # Combine text
+    result = "\n".join(block["text"] for block in text_blocks if block["text"])
+    
+    logger.debug(f"Extracted {len(result)} characters from {len(text_blocks)} blocks")
     
     doc.close()
-    return text
+    return result
 
 
 def extract_text_blocks_in_bbox(
@@ -179,6 +209,8 @@ def extract_text_blocks_in_bbox(
 ) -> list[dict]:
     """Extract text blocks from PDF with positioning info.
     
+    Properly sorts blocks for multi-column layouts.
+    
     Args:
         pdf_path: Path to PDF file
         page_index: 0-based page index
@@ -186,7 +218,7 @@ def extract_text_blocks_in_bbox(
         dpi: DPI used for coordinate conversion
         
     Returns:
-        List of text blocks with positioning information
+        List of text blocks with positioning information, sorted by reading order
     """
     doc = fitz.open(pdf_path)
     page = doc[page_index]
@@ -206,17 +238,19 @@ def extract_text_blocks_in_bbox(
     for block in blocks:
         if len(block) >= 5:  # Ensure it's a text block
             x0, y0, x1, y1, text, block_no, block_type = block[:7]
-            formatted_blocks.append({
-                "bbox": (x0, y0, x1, y1),
-                "text": text,
-                "block_no": block_no,
-                "block_type": block_type,
-            })
+            if block_type == 0:  # Text block only (not image)
+                formatted_blocks.append({
+                    "bbox": (x0, y0, x1, y1),
+                    "text": text.strip(),
+                    "block_no": block_no,
+                    "block_type": block_type,
+                })
     
     doc.close()
     
     # Sort blocks by y position (top to bottom), then x (left to right)
-    formatted_blocks.sort(key=lambda b: (b["bbox"][1], b["bbox"][0]))
+    # Use tolerance for Y to handle text on same line
+    formatted_blocks.sort(key=lambda b: (round(b["bbox"][1] / 5) * 5, b["bbox"][0]))
     
     return formatted_blocks
 
