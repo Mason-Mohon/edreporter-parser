@@ -43,11 +43,17 @@ class ArticlesManager {
                 
                 console.log(`[Articles] Created article: ${response.data.article_id}`);
                 
+                // Update UI
                 this.updateArticlesList();
-                this.selectArticle(response.data.article_id);
+                this.showArticleDetails(response.data.article_id);
+                
+                // Update status
+                setStatus(`Article ${response.data.article_id} selected - ready to draw regions`);
                 
                 // Focus on title input
-                document.getElementById('article-title').focus();
+                setTimeout(() => {
+                    document.getElementById('article-title').focus();
+                }, 100);
             }
         } catch (error) {
             console.error('[Articles] Error creating article:', error);
@@ -58,13 +64,17 @@ class ArticlesManager {
     updateArticlesList() {
         const list = document.getElementById('articles-list');
         const articles = window.appState.annotations.articles;
+        const count = Object.keys(articles).length;
         
-        console.log(`[Articles] Updating list with ${Object.keys(articles).length} articles`);
+        console.log(`[Articles] Updating list with ${count} articles`);
         
-        if (Object.keys(articles).length === 0) {
+        // Update count badge
+        document.getElementById('article-count').textContent = `(${count})`;
+        
+        if (count === 0) {
             list.innerHTML = `
                 <div class="list-group-item text-center text-muted">
-                    No articles yet
+                    Click "New" to create your first article
                 </div>
             `;
             return;
@@ -79,11 +89,22 @@ class ArticlesManager {
             const article = articles[articleId];
             const isActive = articleId === window.appState.selectedArticle;
             
+            // Count regions for this article
+            let regionCount = 0;
+            Object.values(window.appState.annotations.pages).forEach(page => {
+                regionCount += page.regions.filter(r => r.article_id === articleId).length;
+            });
+            
             html += `
                 <div class="list-group-item ${isActive ? 'active' : ''}" 
-                     onclick="window.articlesManager.selectArticle('${articleId}')">
+                     onclick="window.articlesManager.selectArticle('${articleId}')"
+                     style="cursor: pointer;">
                     <div class="article-color-badge" style="background-color: ${article.color};"></div>
-                    <span class="article-title">${articleId}: ${article.title || '(no title)'}</span>
+                    <div class="flex-grow-1">
+                        <div class="article-title">${articleId}: ${article.title || '(no title)'}</div>
+                        <small class="${isActive ? 'text-white-50' : 'text-muted'}">${regionCount} regions</small>
+                    </div>
+                    ${isActive ? '<i class="bi bi-check-circle-fill"></i>' : ''}
                 </div>
             `;
         });
@@ -99,6 +120,11 @@ class ArticlesManager {
         // Update UI
         this.updateArticlesList();
         this.showArticleDetails(articleId);
+        
+        // Update status to show selected article
+        const article = window.appState.annotations.articles[articleId];
+        const title = article.title || '(no title)';
+        setStatus(`Selected: ${articleId} - ${title}. Draw regions on the PDF.`);
     }
     
     showArticleDetails(articleId) {

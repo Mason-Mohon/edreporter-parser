@@ -32,14 +32,21 @@ class CanvasManager {
             // Only draw if we have a selected article
             if (!window.appState || !window.appState.selectedArticle) {
                 console.warn('[Canvas] No article selected, cannot draw region');
+                setStatus('⚠️ Select an article first before drawing regions', true);
+                
+                // Flash the articles section to draw attention
+                const articlesCard = document.querySelector('#articles-list').closest('.card');
+                articlesCard.style.border = '3px solid #dc3545';
+                setTimeout(() => {
+                    articlesCard.style.border = '';
+                }, 2000);
+                
                 return;
             }
             
             this.isDrawing = true;
             const pointer = this.canvas.getPointer(options.e);
-            orig
-
-X = pointer.x;
+            origX = pointer.x;
             origY = pointer.y;
             
             const article = window.appState.annotations.articles[window.appState.selectedArticle];
